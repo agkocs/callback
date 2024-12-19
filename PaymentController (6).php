@@ -185,23 +185,35 @@ public function paymentVerify(Request $request, $gateway)
 
 
 
-public function posfixPaymentVerify(Request $request, $orderId)
+public function posfixPaymentVerify(Request $request)
 {
-    $order = Order::where('id', $orderId)->first();
+    try {
+        $xmlResponse = $request->getContent();
+        $data = Helper::formatXMLOutput($xmlResponse);
+        
+        $order = Order::where('id', $data['orderId'])->first();
+        
+        if (!empty($order)) {
+            $paymentChannel = PaymentChannel::where('class_name', 'Posfix')
+                ->where('status', 'active')
+                ->first();
 
-    if (!empty($order)) {
-        $paymentChannel = PaymentChannel::where('class_name', 'Posfix')->first();
-        $channel = new Channel($paymentChannel);
-        
-        $verify = $channel->verifyPayment($request->all());
-        
-        if ($verify->status == 'success') {
-            // Ödeme başarılı, projenin kendi işlem sonrası metoduna yönlendir
-            return $this->paymentOrderAfterVerify($order);
+            $channel = new Channel($paymentChannel);
+            
+            // XML verilerini kontrol et
+            if ($data['result'] === '1') {
+                // Başarılı ödeme
+                return $this->paymentOrderAfterVerify($order);
+            }
         }
+        
+        // Başarısız ödeme
+        return $this->paymentOrderAfterVerify($order, false);
+        
+    } catch (\Exception $e) {
+        \Log::error('Posfix Payment Error: ' . $e->getMessage());
+        return $this->paymentOrderAfterVerify($order, false);
     }
-
-    return $this->paymentOrderAfterVerify($order, false);
 }
     /*
      * | this methode only run for payku.result
